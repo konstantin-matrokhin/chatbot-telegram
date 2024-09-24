@@ -196,6 +196,12 @@ def is_admin(config, user_id: int, log_no_admin=False) -> bool:
     return False
 
 
+def get_admins(config):
+    if config['admin_user_ids'] == '-':
+        return []
+    admin_user_ids = config['admin_user_ids'].split(',')
+    return admin_user_ids
+
 def get_user_budget(config, user_id) -> float | None:
     """
     Get the user's budget based on their user ID and the bot configuration.
@@ -384,6 +390,7 @@ def cleanup_intermediate_files(response: any):
 def encode_image(fileobj):
     image = base64.b64encode(fileobj.getvalue()).decode('utf-8')
     return f'data:image/jpeg;base64,{image}'
+
 
 def decode_image(imgbase64):
     image = imgbase64[len('data:image/jpeg;base64,'):]
