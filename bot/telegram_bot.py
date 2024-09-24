@@ -77,7 +77,7 @@ class ChatGPTTelegramBot:
                 localized_text('help_text', bot_language)[2]
         )
         for admin_id in get_admins(self.config):
-            context.bot.send_message(chat_id=admin_id, text=f'User {update.message.from_user.username} requested /start command')
+            await context.bot.send_message(chat_id=admin_id, text=f'User with id {update.message.from_user.id} (@{update.message.from_user.username}) requested /start command')
         await update.message.reply_text(help_text, disable_web_page_preview=True)
 
     async def stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
