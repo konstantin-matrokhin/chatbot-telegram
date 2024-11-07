@@ -79,8 +79,11 @@ class ChatGPTTelegramBot:
                 localized_text('help_text', bot_language)[2]
         )
         for admin_id in get_admins(self.config):
-            await context.bot.send_message(chat_id=admin_id,
-                                           text=f'User with id {update.message.from_user.id} (@{update.message.from_user.username}) requested /start command')
+            try:
+                await context.bot.send_message(chat_id=admin_id,
+                                               text=f'User with id {update.message.from_user.id} (@{update.message.from_user.username}) requested /start command')
+            except Exception:
+                pass
         await update.message.reply_text(help_text, disable_web_page_preview=True)
 
     async def stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -258,7 +261,8 @@ class ChatGPTTelegramBot:
         user_id = update.message.from_user.id
         today = date.today()
         last_update = date.fromisoformat(self.usage[user_id].usage['current_cost']['last_update'])
-        if last_update != today:
+        created = self.usage[user_id].usage['current_cost']['created']
+        if created == today or last_update != today:
             try:
                 member = await context.bot.get_chat_member(chat_id=-1002407348424, user_id=user_id)
                 if member.status == ChatMemberStatus.LEFT:

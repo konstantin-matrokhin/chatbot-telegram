@@ -60,13 +60,15 @@ class UsageTracker:
                 self.usage['usage_history']['vision_tokens'] = {}
             if 'tts_characters' not in self.usage['usage_history']:
                 self.usage['usage_history']['tts_characters'] = {}
+            if 'created' not in self.usage['current_cost']:
+                self.usage['current_cost']['created'] = str(date.today())
         else:
             # ensure directory exists
             pathlib.Path(logs_dir).mkdir(exist_ok=True)
             # create new dictionary for this user
             self.usage = {
                 "user_name": user_name,
-                "current_cost": {"day": 0.0, "month": 0.0, "all_time": 0.0, "last_update": str(date.today())},
+                "current_cost": {"day": 0.0, "month": 0.0, "all_time": 0.0, "last_update": str(date.today()), "created": str(date.today())},
                 "usage_history": {"chat_tokens": {}, "transcription_seconds": {}, "number_images": {}, "tts_characters": {}, "vision_tokens":{}}
             }
 
