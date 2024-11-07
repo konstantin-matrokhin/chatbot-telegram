@@ -1,27 +1,28 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import os
-import io
-
+from datetime import date
 from uuid import uuid4
+
+from PIL import Image
+from pydub import AudioSegment
 from telegram import BotCommandScopeAllGroupChats, Update, constants
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle
 from telegram import InputTextMessageContent, BotCommand
+from telegram.constants import ChatMemberStatus
 from telegram.error import RetryAfter, TimedOut, BadRequest
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, \
     filters, InlineQueryHandler, CallbackQueryHandler, Application, ContextTypes, CallbackContext
 
-from pydub import AudioSegment
-from PIL import Image
-
-from utils import is_group_chat, get_thread_id, message_text, wrap_with_indicator, split_into_chunks, \
-    edit_message_with_retry, get_stream_cutoff_values, is_allowed, get_remaining_budget, is_admin, is_within_budget, \
-    get_reply_to_message_id, add_chat_request_to_usage_tracker, error_handler, is_direct_result, handle_direct_result, \
-    cleanup_intermediate_files, get_admins
 from openai_helper import OpenAIHelper, localized_text
 from usage_tracker import UsageTracker
+from utils import is_group_chat, get_thread_id, message_text, wrap_with_indicator, split_into_chunks, \
+    edit_message_with_retry, get_stream_cutoff_values, is_allowed, get_remaining_budget, is_within_budget, \
+    get_reply_to_message_id, add_chat_request_to_usage_tracker, error_handler, is_direct_result, handle_direct_result, \
+    cleanup_intermediate_files, get_admins
 
 
 class ChatGPTTelegramBot:
@@ -46,7 +47,8 @@ class ChatGPTTelegramBot:
         ]
         # If imaging is enabled, add the "image" command to the list
         if self.config.get('enable_image_generation', False):
-            self.commands.append(BotCommand(command='image', description=localized_text('image_description', bot_language)))
+            self.commands.append(
+                BotCommand(command='image', description=localized_text('image_description', bot_language)))
 
         if self.config.get('enable_tts_generation', False):
             self.commands.append(BotCommand(command='tts', description=localized_text('tts_description', bot_language)))
@@ -77,7 +79,8 @@ class ChatGPTTelegramBot:
                 localized_text('help_text', bot_language)[2]
         )
         for admin_id in get_admins(self.config):
-            await context.bot.send_message(chat_id=admin_id, text=f'User with id {update.message.from_user.id} (@{update.message.from_user.username}) requested /start command')
+            await context.bot.send_message(chat_id=admin_id,
+                                           text=f'User with id {update.message.from_user.id} (@{update.message.from_user.username}) requested /start command')
         await update.message.reply_text(help_text, disable_web_page_preview=True)
 
     async def stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,14 +112,14 @@ class ChatGPTTelegramBot:
         chat_messages, chat_token_length = self.openai.get_conversation_stats(chat_id)
         remaining_budget = get_remaining_budget(self.config, self.usage, update)
         bot_language = self.config['bot_language']
-        
+
         text_current_conversation = (
             f"*{localized_text('stats_conversation', bot_language)[0]}*:\n"
             f"{chat_messages} {localized_text('stats_conversation', bot_language)[1]}\n"
             f"{chat_token_length} {localized_text('stats_conversation', bot_language)[2]}\n"
             "----------------------------\n"
         )
-        
+
         # Check if image generation is enabled and, if so, generate the image statistics for today
         text_today_images = ""
         if self.config.get('enable_image_generation', False):
@@ -129,7 +132,7 @@ class ChatGPTTelegramBot:
         text_today_tts = ""
         if self.config.get('enable_tts_generation', False):
             text_today_tts = f"{characters_today} {localized_text('stats_tts', bot_language)}\n"
-        
+
         text_today = (
             f"*{localized_text('usage_today', bot_language)}:*\n"
             f"{tokens_today} {localized_text('stats_tokens', bot_language)}\n"
@@ -141,7 +144,7 @@ class ChatGPTTelegramBot:
             f"{localized_text('stats_total', bot_language)}{current_cost['cost_today']:.2f}\n"
             "----------------------------\n"
         )
-        
+
         text_month_images = ""
         if self.config.get('enable_image_generation', False):
             text_month_images = f"{images_month} {localized_text('stats_images', bot_language)}\n"
@@ -153,7 +156,7 @@ class ChatGPTTelegramBot:
         text_month_tts = ""
         if self.config.get('enable_tts_generation', False):
             text_month_tts = f"{characters_month} {localized_text('stats_tts', bot_language)}\n"
-        
+
         # Check if image generation is enabled and, if so, generate the image statistics for the month
         text_month = (
             f"*{localized_text('usage_month', bot_language)}:*\n"
@@ -196,6 +199,9 @@ class ChatGPTTelegramBot:
             await self.send_disallowed_message(update, context)
             return
 
+        if not await self.check_subscription(update, context):
+            return
+
         chat_id = update.effective_chat.id
         if chat_id not in self.last_message:
             logging.warning(f'User {update.message.from_user.name} (id: {update.message.from_user.id})'
@@ -235,12 +241,54 @@ class ChatGPTTelegramBot:
             text=localized_text('reset_done', self.config['bot_language'])
         )
 
+    async def invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # await context.bot.send_invoice(
+        #     update.message.chat_id,
+        #     title='Test invoice',
+        #     description='Description',
+        #     payload='payload',
+        #     currency='XTR',
+        #     provider_token='',
+        #     prices=[LabeledPrice('XTR', 150)],
+        #     start_parameter='start_param'
+        # )
+        return
+
+    async def is_user_subscribed(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.message.from_user.id
+        today = date.today()
+        last_update = date.fromisoformat(self.usage[user_id].usage['current_cost']['last_update'])
+        if last_update != today:
+            try:
+                member = await context.bot.get_chat_member(chat_id=-1002407348424, user_id=user_id)
+                if member.status == ChatMemberStatus.LEFT:
+                    return False
+                return True
+            except Exception as e:
+                return False
+        else:
+            return True
+
+    async def check_subscription(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        is_sub = await self.is_user_subscribed(update, context)
+        if not is_sub:
+            logging.info('User tried to chat without subscription')
+            await context.bot.send_message(chat_id=update.message.chat_id,
+                                           text="""
+🚀 Get started now! Subscribe to [>>>MY CHANNEL<<<](http://t.me/kmatrokhin_projects) to use the bot.  
+Already subscribed? Wonderful! Resend your prompt and enjoy ✨
+""", parse_mode=constants.ParseMode.MARKDOWN, disable_web_page_preview=True)
+        return is_sub
+
     async def image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         Generates an image for the given prompt using DALL·E APIs
         """
         if not self.config['enable_image_generation'] \
                 or not await self.check_allowed_and_within_budget(update, context):
+            return
+
+        if not await self.check_subscription(update, context):
             return
 
         image_query = message_text(update.message)
@@ -295,6 +343,9 @@ class ChatGPTTelegramBot:
                 or not await self.check_allowed_and_within_budget(update, context):
             return
 
+        if not await self.check_subscription(update, context):
+            return
+
         tts_query = message_text(update.message)
         if tts_query == '':
             await update.effective_message.reply_text(
@@ -320,7 +371,8 @@ class ChatGPTTelegramBot:
                 self.usage[user_id].add_tts_request(text_length, self.config['tts_model'], self.config['tts_prices'])
                 # add guest chat request to guest usage tracker
                 if str(user_id) not in self.config['allowed_user_ids'].split(',') and 'guests' in self.usage:
-                    self.usage["guests"].add_tts_request(text_length, self.config['tts_model'], self.config['tts_prices'])
+                    self.usage["guests"].add_tts_request(text_length, self.config['tts_model'],
+                                                         self.config['tts_prices'])
 
             except Exception as e:
                 logging.exception(e)
@@ -342,6 +394,9 @@ class ChatGPTTelegramBot:
 
         if is_group_chat(update) and self.config['ignore_group_transcriptions']:
             logging.info('Transcription coming from group chat, ignoring...')
+            return
+
+        if not await self.check_subscription(update, context):
             return
 
         chat_id = update.effective_chat.id
@@ -470,12 +525,11 @@ class ChatGPTTelegramBot:
             else:
                 trigger_keyword = self.config['group_trigger_keyword']
                 if (prompt is None and trigger_keyword != '') or \
-                   (prompt is not None and not prompt.lower().startswith(trigger_keyword.lower())):
+                        (prompt is not None and not prompt.lower().startswith(trigger_keyword.lower())):
                     logging.info('Vision coming from group chat with wrong keyword, ignoring...')
                     return
-        
+
         image = update.message.effective_attachment[-1]
-        
 
         async def _execute():
             bot_language = self.config['bot_language']
@@ -494,14 +548,14 @@ class ChatGPTTelegramBot:
                     parse_mode=constants.ParseMode.MARKDOWN
                 )
                 return
-            
+
             # convert jpg from telegram to png as understood by openai
 
             temp_file_png = io.BytesIO()
 
             try:
                 original_image = Image.open(temp_file)
-                
+
                 original_image.save(temp_file_png, format='PNG')
                 logging.info(f'New vision request received from user {update.message.from_user.name} '
                              f'(id: {update.message.from_user.id})')
@@ -513,8 +567,6 @@ class ChatGPTTelegramBot:
                     reply_to_message_id=get_reply_to_message_id(self.config, update),
                     text=localized_text('media_type_fail', bot_language)
                 )
-            
-            
 
             user_id = update.message.from_user.id
             if user_id not in self.usage:
@@ -522,7 +574,8 @@ class ChatGPTTelegramBot:
 
             if self.config['stream']:
 
-                stream_response = self.openai.interpret_image_stream(chat_id=chat_id, fileobj=temp_file_png, prompt=prompt)
+                stream_response = self.openai.interpret_image_stream(chat_id=chat_id, fileobj=temp_file_png,
+                                                                     prompt=prompt)
                 i = 0
                 prev = ''
                 sent_message = None
@@ -599,12 +652,12 @@ class ChatGPTTelegramBot:
                     if tokens != 'not_finished':
                         total_tokens = int(tokens)
 
-                
+
             else:
 
                 try:
-                    interpretation, total_tokens = await self.openai.interpret_image(chat_id, temp_file_png, prompt=prompt)
-
+                    interpretation, total_tokens = await self.openai.interpret_image(chat_id, temp_file_png,
+                                                                                     prompt=prompt)
 
                     try:
                         await update.effective_message.reply_text(
@@ -653,6 +706,9 @@ class ChatGPTTelegramBot:
             return
 
         if not await self.check_allowed_and_within_budget(update, context):
+            return
+
+        if not await self.check_subscription(update, context):
             return
 
         logging.info(
@@ -1065,6 +1121,7 @@ class ChatGPTTelegramBot:
         application.add_handler(CommandHandler('start', self.help))
         application.add_handler(CommandHandler('stats', self.stats))
         application.add_handler(CommandHandler('resend', self.resend))
+        # application.add_handler(CommandHandler('invoice', self.invoice))
         application.add_handler(CommandHandler(
             'chat', self.prompt, filters=filters.ChatType.GROUP | filters.ChatType.SUPERGROUP)
         )
