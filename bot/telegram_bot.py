@@ -519,6 +519,10 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
         if not self.config['enable_vision'] or not await self.check_allowed_and_within_budget(update, context):
             return
 
+
+        if not await self.check_subscription(update, context):
+            return
+
         chat_id = update.effective_chat.id
         prompt = update.message.caption
 
