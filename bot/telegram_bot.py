@@ -261,7 +261,7 @@ class ChatGPTTelegramBot:
         user_id = update.message.from_user.id
         today = date.today()
         last_update = date.fromisoformat(self.usage[user_id].usage['current_cost']['last_update'])
-        created = self.usage[user_id].usage['current_cost']['created']
+        created = date.fromisoformat(self.usage[user_id].usage['current_cost']['created'])
         if created == today or last_update != today:
             try:
                 member = await context.bot.get_chat_member(chat_id=-1002407348424, user_id=user_id)
