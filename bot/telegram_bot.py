@@ -17,6 +17,8 @@ from telegram.error import RetryAfter, TimedOut, BadRequest
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, \
     filters, InlineQueryHandler, CallbackQueryHandler, Application, ContextTypes, CallbackContext
 
+from bot.entities import create_chat_user_or_get, update_stats, is_user_within_messages_limit, \
+    is_user_within_images_limit
 from openai_helper import OpenAIHelper, localized_text
 from usage_tracker import UsageTracker
 from utils import is_group_chat, get_thread_id, message_text, wrap_with_indicator, split_into_chunks, \
@@ -42,7 +44,7 @@ class ChatGPTTelegramBot:
         self.commands = [
             BotCommand(command='help', description=localized_text('help_description', bot_language)),
             BotCommand(command='reset', description=localized_text('reset_description', bot_language)),
-            BotCommand(command='stats', description=localized_text('stats_description', bot_language)),
+            # BotCommand(command='stats', description=localized_text('stats_description', bot_language)),
             BotCommand(command='resend', description=localized_text('resend_description', bot_language))
         ]
         # If imaging is enabled, add the "image" command to the list
@@ -78,12 +80,12 @@ class ChatGPTTelegramBot:
                 '\n\n' +
                 localized_text('help_text', bot_language)[2]
         )
-        for admin_id in get_admins(self.config):
-            try:
-                await context.bot.send_message(chat_id=admin_id,
-                                               text=f'User with id {update.message.from_user.id} (@{update.message.from_user.username}) requested /start command')
-            except Exception:
-                pass
+        # for admin_id in get_admins(self.config):
+        #     try:
+        #         await context.bot.send_message(chat_id=admin_id,
+        #                                        text=f'User with id {update.message.from_user.id} (@{update.message.from_user.username}) requested /start command')
+        #     except Exception:
+        #         pass
         await update.message.reply_text(help_text, disable_web_page_preview=True)
 
     async def stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -196,13 +198,15 @@ class ChatGPTTelegramBot:
         """
         Resend the last request
         """
-        if not await is_allowed(self.config, update, context):
-            logging.warning(f'User {update.message.from_user.name}  (id: {update.message.from_user.id})'
-                            ' is not allowed to resend the message')
-            await self.send_disallowed_message(update, context)
-            return
+        # if not await is_allowed(self.config, update, context):
+        #     logging.warning(f'User {update.message.from_user.name}  (id: {update.message.from_user.id})'
+        #                     ' is not allowed to resend the message')
+        #     await self.send_disallowed_message(update, context)
+        #     return
 
         if not await self.check_subscription(update, context):
+            return
+        if not await self.check_messages_limits(update, context):
             return
 
         chat_id = update.effective_chat.id
@@ -227,11 +231,11 @@ class ChatGPTTelegramBot:
         """
         Resets the conversation.
         """
-        if not await is_allowed(self.config, update, context):
-            logging.warning(f'User {update.message.from_user.name} (id: {update.message.from_user.id}) '
-                            'is not allowed to reset the conversation')
-            await self.send_disallowed_message(update, context)
-            return
+        # if not await is_allowed(self.config, update, context):
+        #     logging.warning(f'User {update.message.from_user.name} (id: {update.message.from_user.id}) '
+        #                     'is not allowed to reset the conversation')
+        #     await self.send_disallowed_message(update, context)
+        #     return
 
         logging.info(f'Resetting the conversation for user {update.message.from_user.name} '
                      f'(id: {update.message.from_user.id})...')
@@ -284,15 +288,36 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
 """, parse_mode=constants.ParseMode.MARKDOWN, disable_web_page_preview=True)
         return is_sub
 
+    async def check_messages_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        is_within_limit = is_user_within_messages_limit(update.message.from_user.id, self.config)
+        if not is_within_limit:
+            await context.bot.send_message(chat_id=update.message.chat_id,
+                                           text="You have reached the limit. Please purchase subscription.",
+                                           parse_mode=constants.ParseMode.MARKDOWN)
+        return is_within_limit
+
+    async def check_images_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        is_within_limit = is_user_within_images_limit(update.message.from_user.id, self.config)
+        if not is_within_limit:
+            await context.bot.send_message(chat_id=update.message.chat_id,
+                                           text="You have reached the limit. Please purchase subscription.",
+                                           parse_mode=constants.ParseMode.MARKDOWN)
+        return is_within_limit
+
+
     async def image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         Generates an image for the given prompt using DALL·E APIs
         """
         if not self.config['enable_image_generation'] \
                 or not await self.check_allowed_and_within_budget(update, context):
-            return
+            pass
+
+        create_chat_user_or_get(update)
 
         if not await self.check_subscription(update, context):
+            return
+        if not await self.check_images_limits(update, context):
             return
 
         image_query = message_text(update.message)
@@ -324,6 +349,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
                 # add image request to users usage tracker
                 user_id = update.message.from_user.id
                 self.usage[user_id].add_image_request(image_size, self.config['image_prices'])
+                update_stats(chat_id=user_id, images=1)
                 # add guest chat request to guest usage tracker
                 if str(user_id) not in self.config['allowed_user_ids'].split(',') and 'guests' in self.usage:
                     self.usage["guests"].add_image_request(image_size, self.config['image_prices'])
@@ -345,9 +371,14 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
         """
         if not self.config['enable_tts_generation'] \
                 or not await self.check_allowed_and_within_budget(update, context):
-            return
+            pass
+
+        create_chat_user_or_get(update)
 
         if not await self.check_subscription(update, context):
+            return
+
+        if not await self.check_messages_limits(update, context):
             return
 
         tts_query = message_text(update.message)
@@ -373,6 +404,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
                 # add image request to users usage tracker
                 user_id = update.message.from_user.id
                 self.usage[user_id].add_tts_request(text_length, self.config['tts_model'], self.config['tts_prices'])
+                update_stats(chat_id=user_id, messages=1)
                 # add guest chat request to guest usage tracker
                 if str(user_id) not in self.config['allowed_user_ids'].split(',') and 'guests' in self.usage:
                     self.usage["guests"].add_tts_request(text_length, self.config['tts_model'],
@@ -394,13 +426,18 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
         Transcribe audio messages.
         """
         if not self.config['enable_transcription'] or not await self.check_allowed_and_within_budget(update, context):
-            return
+            pass
+
+        create_chat_user_or_get(update)
 
         if is_group_chat(update) and self.config['ignore_group_transcriptions']:
             logging.info('Transcription coming from group chat, ignoring...')
             return
 
         if not await self.check_subscription(update, context):
+            return
+
+        if not await self.check_messages_limits(update, context):
             return
 
         chat_id = update.effective_chat.id
@@ -460,6 +497,8 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
                 response_to_transcription = any(transcript.lower().startswith(prefix.lower()) if prefix else False
                                                 for prefix in self.config['voice_reply_prompts'])
 
+                update_stats(chat_id=user_id, messages=1)
+
                 if self.config['voice_reply_transcript'] and not response_to_transcription:
 
                     # Split into chunks of 4096 characters (Telegram's message limit)
@@ -517,10 +556,14 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
         Interpret image using vision model.
         """
         if not self.config['enable_vision'] or not await self.check_allowed_and_within_budget(update, context):
-            return
+            pass
 
+        create_chat_user_or_get(update)
 
         if not await self.check_subscription(update, context):
+            return
+
+        if not await self.check_images_limits(update, context):
             return
 
         chat_id = update.effective_chat.id
@@ -699,6 +742,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
                     )
             vision_token_price = self.config['vision_token_price']
             self.usage[user_id].add_vision_tokens(total_tokens, vision_token_price)
+            update_stats(chat_id=user_id, images=1)
 
             allowed_user_ids = self.config['allowed_user_ids'].split(',')
             if str(user_id) not in allowed_user_ids and 'guests' in self.usage:
@@ -713,11 +757,16 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
         if update.edited_message or not update.message or update.message.via_bot:
             return
 
+        create_chat_user_or_get(update)
+
         if not await self.check_allowed_and_within_budget(update, context):
-            return
+            pass
 
         if not await self.check_subscription(update, context):
             return
+        if not await self.check_messages_limits(update, context):
+            return
+
 
         logging.info(
             f'New message received from user {update.message.from_user.name} (id: {update.message.from_user.id})')
@@ -863,6 +912,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
 
                 await wrap_with_indicator(update, context, _reply, constants.ChatAction.TYPING)
 
+            update_stats(chat_id=chat_id, messages=1)
             add_chat_request_to_usage_tracker(self.usage, self.config, user_id, total_tokens)
 
         except Exception as e:
@@ -882,7 +932,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
         if len(query) < 3:
             return
         if not await self.check_allowed_and_within_budget(update, context, is_inline=True):
-            return
+            pass
 
         callback_data_suffix = "gpt:"
         result_id = str(uuid4())
@@ -1127,7 +1177,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
         application.add_handler(CommandHandler('image', self.image))
         application.add_handler(CommandHandler('tts', self.tts))
         application.add_handler(CommandHandler('start', self.help))
-        application.add_handler(CommandHandler('stats', self.stats))
+        # application.add_handler(CommandHandler('stats', self.stats))
         application.add_handler(CommandHandler('resend', self.resend))
         # application.add_handler(CommandHandler('invoice', self.invoice))
         application.add_handler(CommandHandler(

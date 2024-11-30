@@ -1,0 +1,47 @@
+@startuml
+
+hide circle
+skinparam linetype ortho
+
+entity "user" as u {
+ * chat_id: number, primary key
+ --
+ username: varchar
+ * created_at: timestamp default now()
+ * last_active: timestamp default now()
+}
+
+entity "subscriptions" as sub {
+    * id: number, primary key
+    --
+    * plan_name: varchar
+    * transaction_id: integer, references "transaction"
+    * start_date: timestamp
+    * end_date: timestamp
+    * created_at: timestamp
+}
+
+entity "transaction" as t {
+    * id: integer, primary key
+    --
+    * user_id: number, references "user"
+    * amount: number
+    * currency: varchar
+    * status: varchar
+    * created_at: timestamp
+}
+
+entity "daily_stats" as ds {
+    * user_id: number, references "user"
+    --
+    * messages: number
+    * images: number
+    * date: timestamp
+}
+
+u --> t
+t -> sub
+u --> sub
+u --> ds
+
+@enduml
