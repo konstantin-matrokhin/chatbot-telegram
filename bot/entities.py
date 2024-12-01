@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from telegram import Update
 
-from bot.utils import is_admin
+from utils import is_admin
 
 engine = create_engine('sqlite:///data.db', echo=False)
 

@@ -18,9 +18,9 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, \
     filters, InlineQueryHandler, CallbackQueryHandler, Application, ContextTypes, CallbackContext, \
     PreCheckoutQueryHandler
 
-from bot.entities import create_chat_user_or_get, update_stats, is_user_within_messages_limit, \
+from entities import create_chat_user_or_get, update_stats, is_user_within_messages_limit, \
     is_user_within_images_limit, create_subscription, is_premium, get_stats_internal, get_stats
-from bot.utils import is_admin
+from utils import is_admin
 from openai_helper import OpenAIHelper, localized_text
 from usage_tracker import UsageTracker
 from utils import is_group_chat, get_thread_id, message_text, wrap_with_indicator, split_into_chunks, \
