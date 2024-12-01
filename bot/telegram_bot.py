@@ -304,11 +304,11 @@ After the end date, you will be asked to renew the subscription.
 
     async def refund_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat_id
-        if not is_admin(chat_id):
+        if not is_admin(self.config, chat_id):
             return
-        telegram_charge_id = context.args[0]
+        telegram_charge_id = context.args[1]
         status = await context.bot.refund_star_payment(
-            user_id=update.message.chat.id,
+            user_id=context.args[0],
             telegram_payment_charge_id=telegram_charge_id
         )
         if status:
