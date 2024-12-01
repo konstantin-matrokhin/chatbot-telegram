@@ -274,7 +274,7 @@ class ChatGPTTelegramBot:
             payload='premium',
             currency='XTR',
             provider_token='',
-            prices=[LabeledPrice('XTR', 1)]
+            prices=[LabeledPrice('XTR', 150)]
         )
 
     async def pre_chekout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
