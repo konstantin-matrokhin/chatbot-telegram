@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import base64
+import traceback
 
 import telegram
 from telegram import Message, MessageEntity, Update, ChatMember, constants
@@ -145,7 +146,11 @@ async def error_handler(_: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handles errors in the telegram-python-bot library.
     """
-    logging.error(f'Exception while handling an update: {context.error}')
+    error = context.error
+    stack_trace = ''.join(traceback.format_exception(None, error, error.__traceback__))
+    logging.error(f'Exception while handling an update: {stack_trace}')
+
+
 
 
 async def is_allowed(config, update: Update, context: CallbackContext, is_inline=False) -> bool:

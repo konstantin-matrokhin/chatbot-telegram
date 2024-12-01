@@ -26,6 +26,7 @@ def upgrade() -> None:
             amount integer not null,
             currency text not null,
             status text not null,
+            ref_id text,
             created_at timestamp not null
         );
     """)

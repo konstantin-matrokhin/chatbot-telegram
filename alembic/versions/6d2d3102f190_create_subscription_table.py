@@ -24,8 +24,8 @@ def upgrade() -> None:
             id integer primary key,
             plan_name text not null,
             transaction_id integer not null references "transaction",
-            start_date timestamp not null,
-            end_date timestamp not null,
+            start_date date not null,
+            end_date date not null,
             created_at timestamp not null
         );
     """)

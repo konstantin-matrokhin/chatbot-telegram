@@ -9,16 +9,18 @@ from uuid import uuid4
 
 from PIL import Image
 from pydub import AudioSegment
-from telegram import BotCommandScopeAllGroupChats, Update, constants
+from telegram import BotCommandScopeAllGroupChats, Update, constants, LabeledPrice
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle
 from telegram import InputTextMessageContent, BotCommand
 from telegram.constants import ChatMemberStatus
 from telegram.error import RetryAfter, TimedOut, BadRequest
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, \
-    filters, InlineQueryHandler, CallbackQueryHandler, Application, ContextTypes, CallbackContext
+    filters, InlineQueryHandler, CallbackQueryHandler, Application, ContextTypes, CallbackContext, \
+    PreCheckoutQueryHandler
 
 from bot.entities import create_chat_user_or_get, update_stats, is_user_within_messages_limit, \
-    is_user_within_images_limit
+    is_user_within_images_limit, create_subscription, is_premium, get_stats_internal, get_stats
+from bot.utils import is_admin
 from openai_helper import OpenAIHelper, localized_text
 from usage_tracker import UsageTracker
 from utils import is_group_chat, get_thread_id, message_text, wrap_with_indicator, split_into_chunks, \
@@ -44,7 +46,8 @@ class ChatGPTTelegramBot:
         self.commands = [
             BotCommand(command='help', description=localized_text('help_description', bot_language)),
             BotCommand(command='reset', description=localized_text('reset_description', bot_language)),
-            # BotCommand(command='stats', description=localized_text('stats_description', bot_language)),
+            BotCommand(command='premium', description='Buy premium'),
+            BotCommand(command='stats', description=localized_text('stats_description', bot_language)),
             BotCommand(command='resend', description=localized_text('resend_description', bot_language))
         ]
         # If imaging is enabled, add the "image" command to the list
@@ -74,21 +77,30 @@ class ChatGPTTelegramBot:
         help_text = (
                 localized_text('help_text', bot_language)[0] +
                 '\n\n' +
-                '\n'.join(commands_description) +
-                '\n\n' +
                 localized_text('help_text', bot_language)[1] +
+                '\n' +
+                localized_text('help_text', bot_language)[2] +
+                '\n' +
+                localized_text('help_text', bot_language)[3] +
                 '\n\n' +
-                localized_text('help_text', bot_language)[2]
+                '\n'.join(commands_description)
         )
-        # for admin_id in get_admins(self.config):
-        #     try:
-        #         await context.bot.send_message(chat_id=admin_id,
-        #                                        text=f'User with id {update.message.from_user.id} (@{update.message.from_user.username}) requested /start command')
-        #     except Exception:
-        #         pass
-        await update.message.reply_text(help_text, disable_web_page_preview=True)
+        await update.message.reply_text(help_text, disable_web_page_preview=True, parse_mode=constants.ParseMode.MARKDOWN)
 
     async def stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat_id
+        is_paid = is_premium(chat_id)
+        daily_stats = get_stats(update.message.from_user.id)
+        max_msg = 15 if not is_paid else 'Unlimited'
+        max_img = 2 if not is_paid else 'Unlimited'
+        text = f"""
+*Daily stats:*
+- Messages left: {daily_stats.messages}/{max_msg}
+- Images left: {daily_stats.images}/{max_img}
+"""
+        await context.bot.send_message(chat_id, text, parse_mode=constants.ParseMode.MARKDOWN)
+
+    async def stats2(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         Returns token usage statistics for current day and month.
         """
@@ -204,7 +216,7 @@ class ChatGPTTelegramBot:
         #     await self.send_disallowed_message(update, context)
         #     return
 
-        if not await self.check_subscription(update, context):
+        if not await self.check_channel_subscription(update, context):
             return
         if not await self.check_messages_limits(update, context):
             return
@@ -249,17 +261,68 @@ class ChatGPTTelegramBot:
         )
 
     async def invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        # await context.bot.send_invoice(
-        #     update.message.chat_id,
-        #     title='Test invoice',
-        #     description='Description',
-        #     payload='payload',
-        #     currency='XTR',
-        #     provider_token='',
-        #     prices=[LabeledPrice('XTR', 150)],
-        #     start_parameter='start_param'
-        # )
-        return
+        chat_id = update.message.chat_id
+        if is_premium(chat_id):
+            await context.bot.send_message(chat_id=chat_id,
+                                           text="You are already a premium user 🥰",
+                                           parse_mode=constants.ParseMode.MARKDOWN)
+            return
+        await context.bot.send_invoice(
+            chat_id=chat_id,
+            title='Chatbot GPT Premium',
+            description='Unlimited GPT 30 days',
+            payload='premium',
+            currency='XTR',
+            provider_token='',
+            prices=[LabeledPrice('XTR', 1)]
+        )
+
+    async def pre_chekout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        pre_checkout_query = update.pre_checkout_query
+        if pre_checkout_query.invoice_payload == 'premium':
+            await pre_checkout_query.answer(ok=True)
+        else:
+            await pre_checkout_query.answer(ok=False, error_message="Something went wrong 😟 Please contact me: @PatchMapping")
+
+        if is_premium(pre_checkout_query.from_user.id):
+            await pre_checkout_query.answer(ok=False, error_message="You are already a premium user 🥰")
+
+
+    async def successful_payment_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        payment = update.message.successful_payment
+        chat_id = update.message.chat_id
+        subscription = create_subscription(chat_id, payment.total_amount, payment.telegram_payment_charge_id)
+        text = f"""
+Thank you! ❤️
+
+Subscription started! End date is {subscription.end_date.strftime("%Y-%m-%d")}
+You can use the bot as much as you want!
+After the end date, you will be asked to renew the subscription.
+        """
+        await context.bot.send_message(chat_id, text)
+        await self.broadcast_to_admins(context, f'User {update.message.from_user.name} bought a subscription!')
+
+    async def refund_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat_id
+        # if not is_admin(chat_id):
+        #     return
+        telegram_charge_id = context.args[0]
+        status = await context.bot.refund_star_payment(
+            user_id=update.message.chat.id,
+            telegram_payment_charge_id=telegram_charge_id
+        )
+        if status:
+            await context.bot.send_message(
+                chat_id=update.message.chat.id,
+                text=f'Payment {telegram_charge_id} has been refunded successfully.'
+            )
+
+    async def broadcast_to_admins(self, context: ContextTypes.DEFAULT_TYPE, text):
+        for admin_id in get_admins(self.config):
+            try:
+                await context.bot.send_message(chat_id=admin_id, text=text)
+            except Exception:
+                pass
 
     async def is_user_subscribed(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.message.from_user.id
@@ -277,31 +340,52 @@ class ChatGPTTelegramBot:
         else:
             return True
 
-    async def check_subscription(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def check_channel_subscription(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_sub = await self.is_user_subscribed(update, context)
+        if is_premium(update.message.from_user.id):
+            return True
         if not is_sub:
             logging.info('User tried to chat without subscription')
             await context.bot.send_message(chat_id=update.message.chat_id,
                                            text="""
-🚀 Get started now! Subscribe to [>>>MY CHANNEL<<<](http://t.me/kmatrokhin_projects) to use the bot.  
-Already subscribed? Wonderful! Resend your prompt and enjoy ✨
+🚀 Get started now! Subscribe to [MY CHANNEL](http://t.me/kmatrokhin_projects) to use the bot.  
+Already subscribed? Wonderful! ✨ Resend your prompt and enjoy ⬇️ Thank you!
 """, parse_mode=constants.ParseMode.MARKDOWN, disable_web_page_preview=True)
         return is_sub
 
+    text_limit = """
+Sorry, you have reached the limit 😨
+Free users have a limit of 15 messages and 2 images per day!
+It will reset tomorrow!
+
+💰 Do you want to purchase monthly subscription? It could me help to pay for the bot's upkeep.
+– Unlimited text messages 🚀
+– Unlimited image generation with DALL·E 🌠
+– Unlimited picture recognition 👀
+– Unlimited Text to speech 🎤
+– Unlimited Voice messages 🔊
+
+🌟 150 Telegram Stars for 30 days.
+🔕 Subscription to my channel no longer required.
+📅 No need to cancel subscription. Pay manually once a month!
+"""
+
     async def check_messages_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+
         is_within_limit = is_user_within_messages_limit(update.message.from_user.id, self.config)
         if not is_within_limit:
             await context.bot.send_message(chat_id=update.message.chat_id,
-                                           text="You have reached the limit. Please purchase subscription.",
-                                           parse_mode=constants.ParseMode.MARKDOWN)
+                                           text=self.text_limit)
+            await self.invoice(update, context)
         return is_within_limit
 
     async def check_images_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_within_limit = is_user_within_images_limit(update.message.from_user.id, self.config)
         if not is_within_limit:
             await context.bot.send_message(chat_id=update.message.chat_id,
-                                           text="You have reached the limit. Please purchase subscription.",
+                                           text=self.text_limit,
                                            parse_mode=constants.ParseMode.MARKDOWN)
+            await self.invoice(update, context)
         return is_within_limit
 
 
@@ -315,7 +399,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
 
         create_chat_user_or_get(update)
 
-        if not await self.check_subscription(update, context):
+        if not await self.check_channel_subscription(update, context):
             return
         if not await self.check_images_limits(update, context):
             return
@@ -375,7 +459,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
 
         create_chat_user_or_get(update)
 
-        if not await self.check_subscription(update, context):
+        if not await self.check_channel_subscription(update, context):
             return
 
         if not await self.check_messages_limits(update, context):
@@ -434,7 +518,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
             logging.info('Transcription coming from group chat, ignoring...')
             return
 
-        if not await self.check_subscription(update, context):
+        if not await self.check_channel_subscription(update, context):
             return
 
         if not await self.check_messages_limits(update, context):
@@ -560,7 +644,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
 
         create_chat_user_or_get(update)
 
-        if not await self.check_subscription(update, context):
+        if not await self.check_channel_subscription(update, context):
             return
 
         if not await self.check_images_limits(update, context):
@@ -762,7 +846,7 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
         if not await self.check_allowed_and_within_budget(update, context):
             pass
 
-        if not await self.check_subscription(update, context):
+        if not await self.check_channel_subscription(update, context):
             return
         if not await self.check_messages_limits(update, context):
             return
@@ -1177,9 +1261,9 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
         application.add_handler(CommandHandler('image', self.image))
         application.add_handler(CommandHandler('tts', self.tts))
         application.add_handler(CommandHandler('start', self.help))
-        # application.add_handler(CommandHandler('stats', self.stats))
+        application.add_handler(CommandHandler('stats', self.stats))
         application.add_handler(CommandHandler('resend', self.resend))
-        # application.add_handler(CommandHandler('invoice', self.invoice))
+        application.add_handler(CommandHandler('premium', self.invoice))
         application.add_handler(CommandHandler(
             'chat', self.prompt, filters=filters.ChatType.GROUP | filters.ChatType.SUPERGROUP)
         )
@@ -1195,6 +1279,9 @@ Already subscribed? Wonderful! Resend your prompt and enjoy ✨
             constants.ChatType.GROUP, constants.ChatType.SUPERGROUP, constants.ChatType.PRIVATE
         ]))
         application.add_handler(CallbackQueryHandler(self.handle_callback_inline_query))
+        application.add_handler(PreCheckoutQueryHandler(self.pre_chekout_callback))
+        application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, self.successful_payment_callback))
+        application.add_handler(CommandHandler('refund', self.refund_payment))
 
         application.add_error_handler(error_handler)
 
