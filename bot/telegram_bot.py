@@ -1091,11 +1091,11 @@ It will reset tomorrow!
 
         if not await is_allowed(self.config, update, context, is_inline=is_inline):
             logging.warning(f'User {name} (id: {user_id}) is not allowed to use the bot')
-            await self.send_disallowed_message(update, context, is_inline)
+            # await self.send_disallowed_message(update, context, is_inline)
             return False
         if not is_within_budget(self.config, self.usage, update, is_inline=is_inline):
             logging.warning(f'User {name} (id: {user_id}) reached their usage limit')
-            await self.send_budget_reached_message(update, context, is_inline)
+            # await self.send_budget_reached_message(update, context, is_inline)
             return False
 
         return True
