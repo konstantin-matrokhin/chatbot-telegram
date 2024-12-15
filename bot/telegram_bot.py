@@ -87,8 +87,8 @@ class ChatGPTTelegramBot:
         chat_id = update.message.chat_id
         is_paid = is_premium(chat_id)
         daily_stats = get_stats(update.message.from_user.id)
-        max_msg = 15 if not is_paid else 'Unlimited'
-        max_img = 2 if not is_paid else 'Unlimited'
+        max_msg = self.config['max_free_messages_daily'] if not is_paid else 'Unlimited'
+        max_img = self.config['max_free_images_daily'] if not is_paid else 'Unlimited'
         text = f"""
 *Daily stats:*
 - Messages left: {daily_stats.messages}/{max_msg}

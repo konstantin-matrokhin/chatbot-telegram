@@ -300,7 +300,6 @@ def add_chat_request_to_usage_tracker(usage, config, user_id, used_tokens):
     """
     try:
         if int(used_tokens) == 0:
-            logging.warning('No tokens used. Not adding chat request to usage tracker.')
             return
         # add chat request to users usage tracker
         usage[user_id].add_chat_tokens(used_tokens, config['token_price'])

@@ -17,6 +17,7 @@ from PIL import Image
 
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
+from bot.entities import is_premium
 from utils import is_direct_result, encode_image, decode_image
 from plugin_manager import PluginManager
 
@@ -190,8 +191,7 @@ class OpenAIHelper:
                     self.conversations[chat_id] = self.conversations[chat_id][-self.config['max_history_size']:]
 
             common_args = {
-                'model': self.config['model'] if not self.conversations_vision[chat_id] else self.config[
-                    'vision_model'],
+                'model': self.get_model(chat_id),
                 'messages': self.conversations[chat_id],
                 'temperature': self.config['temperature'],
                 'n': self.config['n_choices'],
@@ -216,6 +216,9 @@ class OpenAIHelper:
 
         except Exception as e:
             raise Exception(f"⚠️ _{localized_text('error', bot_language)}._ ⚠️\n{str(e)}") from e
+
+    def get_model(self, chat_id):
+        return self.config['premium_model'] if is_premium(chat_id) else self.config['free_model']
 
     async def __handle_function_call(self, chat_id, response, stream=False, times=0, plugins_used=()):
         function_name = ''
