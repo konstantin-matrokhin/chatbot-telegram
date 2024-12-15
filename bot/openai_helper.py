@@ -17,7 +17,7 @@ from PIL import Image
 
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
-from bot.entities import is_premium
+from entities import is_premium
 from utils import is_direct_result, encode_image, decode_image
 from plugin_manager import PluginManager
 
