@@ -1,25 +1,19 @@
 from __future__ import annotations
+
 import datetime
+import io
+import json
 import logging
 import os
 
-import tiktoken
-
-import openai
-
-import requests
-import json
 import httpx
-import io
-from datetime import date
-from calendar import monthrange
-from PIL import Image
-
+import openai
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 from entities import is_premium
-from utils import is_direct_result, encode_image, decode_image
 from plugin_manager import PluginManager
+from utils import is_direct_result, encode_image
+
 
 def default_max_tokens(model: str) -> int:
     return 4096
