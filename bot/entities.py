@@ -93,7 +93,7 @@ def create_chat_user_or_get(update: Update):
 
             daily_stats = session.query(DailyStats).get(chat_id)
             if daily_stats is None:
-                daily_stats = DailyStats(user_id=chat_id)
+                daily_stats = session.query(DailyStats).filter(DailyStats.user_id.is_(chat_id), DailyStats.for_day.is_(func.current_date())).first()
             daily_stats.for_day = func.current_date()
             session.add(chat_user)
             session.add(daily_stats)
