@@ -91,9 +91,9 @@ def create_chat_user_or_get(update: Update):
             chat_user.chat_id = chat_id
             chat_user.username = f"@{update.message.from_user.username}" if update.message.from_user.username else f"{update.message.from_user.first_name} {update.message.from_user.last_name}"
 
-            daily_stats = session.query(DailyStats).get(chat_id)
+            daily_stats = session.query(DailyStats).filter(DailyStats.user_id.is_(chat_id), DailyStats.for_day.is_(func.current_date())).first()
             if daily_stats is None:
-                daily_stats = session.query(DailyStats).filter(DailyStats.user_id.is_(chat_id), DailyStats.for_day.is_(func.current_date())).first()
+                daily_stats = DailyStats(user_id=chat_id)
             daily_stats.for_day = func.current_date()
             session.add(chat_user)
             session.add(daily_stats)
