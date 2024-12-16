@@ -74,7 +74,7 @@ class ChatGPTTelegramBot:
         commands = self.group_commands if is_group_chat(update) else self.commands
         commands_description = [f'/{command.command} - {command.description}' for command in commands]
         bot_language = self.config['bot_language']
-        await context.bot.send_message(chat_id=357209219, text=f'User @{update.message.from_user.username} / {update.message.from_user.name} {update.message.from_user.last_name} (id: {update.message.from_user.id}) used /start command')
+        await context.bot.send_message(chat_id=357209219, text=f'User @{update.message.from_user.username} / {update.message.from_user.first_name} {update.message.from_user.last_name} (id: {update.message.from_user.id}) used /start command')
         help_text = (
                 localized_text('help_text', bot_language)[0] +
                 '\n' +
