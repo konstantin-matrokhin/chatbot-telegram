@@ -79,20 +79,21 @@ def session_scope():
 
 
 def create_chat_user_or_get(update: Update):
+    chat_id = update.message.chat_id
     with Session() as session:
-        chat_user = session.query(ChatUser).get(update.message.chat_id)
+        chat_user = session.query(ChatUser).get(chat_id)
         if chat_user is not None:
             chat_user.last_active = datetime.datetime.now()
             session.commit()
             return chat_user
         try:
             chat_user = ChatUser()
-            chat_user.chat_id = update.message.chat_id
+            chat_user.chat_id = chat_id
             chat_user.username = f"@{update.message.from_user.username}" if update.message.from_user.username else f"{update.message.from_user.first_name} {update.message.from_user.last_name}"
 
-            daily_stats = session.query(DailyStats).get(chat_user.chat_id)
+            daily_stats = session.query(DailyStats).get(chat_id)
             if daily_stats is None:
-                daily_stats = DailyStats(user_id=chat_user.chat_id)
+                daily_stats = DailyStats(user_id=chat_id)
             daily_stats.for_day = func.current_date()
             session.add(chat_user)
             session.add(daily_stats)
