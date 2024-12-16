@@ -103,7 +103,11 @@ def main():
         'tts_model': os.environ.get('TTS_MODEL', 'tts-1'),
         'tts_prices': [float(i) for i in os.environ.get('TTS_PRICES', "0.015,0.030").split(",")],
         'transcription_price': float(os.environ.get('TRANSCRIPTION_PRICE', 0.006)),
-        'bot_language': os.environ.get('BOT_LANGUAGE', 'en')
+        'bot_language': os.environ.get('BOT_LANGUAGE', 'en'),
+        'max_free_messages_daily': os.environ.get('MAX_FREE_MESSAGES_DAILY', 10),
+        'max_free_images_daily': os.environ.get('MAX_FREE_IMAGES_DAILY', 2),
+        'free_model': os.environ.get('FREE_MODEL', 'gpt-4o-mini'),
+        'premium_model': os.environ.get('PREMIUM_MODEL', 'gpt-o1-mini')
     }
 
     plugin_config = {
