@@ -165,7 +165,7 @@ class ChatGPTTelegramBot:
             payload='premium',
             currency='XTR',
             provider_token='',
-            prices=[LabeledPrice('XTR', 150)]
+            prices=[LabeledPrice('XTR', 100)]
         )
 
     async def pre_chekout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -246,7 +246,7 @@ Already subscribed? Wonderful! ✨ Resend your prompt and enjoy ⬇️ Thank you
 
     text_limit = """
 Sorry, you have reached the limit 😨
-Free users have a limit of 15 messages and 2 images per day!
+Free users have a limit of 4 messages and 1 image per day!
 It will reset tomorrow!
 
 💰 Do you want to purchase monthly subscription? It could me help to pay for the bot's upkeep.
@@ -256,7 +256,7 @@ It will reset tomorrow!
 – Unlimited Text to speech 🎤
 – Unlimited Voice messages 🔊
 
-🌟 150 Telegram Stars for 30 days.
+🌟 100 Telegram Stars for 30 days.
 🔕 Subscription to my channel no longer required.
 📅 No need to cancel subscription. Pay manually once a month!
 """

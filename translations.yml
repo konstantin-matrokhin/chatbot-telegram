@@ -1,0 +1,41 @@
+en:
+  help_description: Show help message
+  reset_description: Reset the conversation
+  image_description: Generate image from prompt (e.g. /image cat)
+  tts_description: Generate speech from text (e.g. /tts my house)
+  stats_description: Get your current usage statistics
+  resend_description: Resend the latest message
+  chat_description: Chat with the bot!
+  disallowed: Sorry, you are not allowed to use this bot. Please contact me @PatchMapping
+  budget_limit: Sorry, you have reached your usage monthly limit. You can purchase
+    monthly subscription. Please text me @PatchMapping
+  help_text: |
+    Hello! 👋 I'm a ChatGPT bot, I am ready to chat with you. Text me!
+    Send me a voice message or file and I'll transcribe it for you
+  usage_today: Usage today
+  usage_month: Usage this month
+  resend_failed: You have nothing to resend
+  reset_done: Done! Let's start a new conversation.
+  image_no_prompt: Please provide a prompt! (e.g. /image cat)
+  image_fail: Failed to generate image
+  vision_fail: Failed to interpret image
+  tts_no_prompt: Please provide text! (e.g. /tts my house)
+  tts_fail: Failed to generate speech
+  media_download_fail:
+    - Failed to download audio file
+    - Make sure the file is not too large. (max 20MB)
+  media_type_fail: Unsupported file type
+  transcript: Transcript
+  answer: Answer
+  transcribe_fail: Failed to transcribe text
+  chat_fail: Failed to get response
+  prompt: prompt
+  completion: completion
+  openai_rate_limit: OpenAI Rate Limit exceeded
+  openai_invalid: OpenAI Invalid request
+  error: An error has occurred
+  try_again: Please try again in a while
+  answer_with_chatgpt: Answer with ChatGPT
+  ask_chatgpt: Ask ChatGPT
+  loading: Loading...
+  function_unavailable_in_inline_mode: This function is unavailable in inline mode
